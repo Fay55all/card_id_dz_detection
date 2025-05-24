@@ -1,0 +1,94 @@
+
+from ultralytics import YOLO
+import cv2
+import os
+import numpy as np
+
+# تحميل النماذج
+model_card = YOLO("runs/detect/train25/weights/best.pt")  # نموذج كشف البطاقة
+model_flag = YOLO("runs/detect/train/weights/best.pt")   # نموذج كشف العلم
+
+# دالة مقارنة الصور
+def are_images_similar(img1, img2, threshold=0.7):
+    img1 = cv2.resize(img1, (100, 100))
+    img2 = cv2.resize(img2, (100, 100))
+    diff = cv2.absdiff(img1, img2)
+    similarity = 1 - (np.sum(diff) / (img1.size * 255))
+    return similarity >= threshold, similarity
+
+# قص البطاقة
+def extract_card(image_path, output_path="cropped_id.jpg"):
+    image = cv2.imread(image_path)
+    results = model_card(image_path)
+
+    if len(results) == 0 or results[0].boxes is None or len(results[0].boxes) == 0:
+        print("❌ لم يتم اكتشاف أي بطاقة.")
+        return None, None
+
+    box = results[0].boxes[0]
+    x1, y1, x2, y2 = map(int, box.xyxy[0])
+    cropped = image[y1:y2, x1:x2]
+    cv2.imwrite(output_path, cropped)
+    print(f"✅ تم حفظ البطاقة في: {output_path}")
+    return cropped, output_path
+
+# قص العلم
+def extract_flag(image, output_path="cropped_flag.jpg"):
+    results = model_flag(image)
+    if len(results) == 0 or results[0].boxes is None or len(results[0].boxes) == 0:
+        print("⚠️ لم يتم العثور على علم.")
+        return None
+    box = results[0].boxes[0]
+    x1, y1, x2, y2 = map(int, box.xyxy[0])
+    flag = image[y1:y2, x1:x2]
+    cv2.imwrite(output_path, flag)
+    print(f"✅ تم حفظ العلم في: {output_path}")
+    return flag
+
+# التحقق من الاتجاه (مع مقارنة العلم المقلوب)
+def check_and_fix_orientation(card_img_path, flag_reference_path="flag_ref.jpg"):
+    card_img = cv2.imread(card_img_path)
+    flag_ref = cv2.imread(flag_reference_path)
+
+    # استخراج العلم من النسخة الأصلية
+    flag = extract_flag(card_img)
+    if flag is None:
+        print("⚠️ لا يمكن التحقق من الاتجاه بدون علم.")
+        return card_img
+
+    # مقارنة مع المرجع كما هو
+    match_normal, sim_normal = are_images_similar(flag, flag_ref)
+
+    # مقارنة العلم المقلوب مع المرجع
+    flag_rotated = cv2.rotate(flag, cv2.ROTATE_180)
+    match_flipped, sim_flipped = are_images_similar(flag_rotated, flag_ref)
+
+    print(f"🔍 نسبة التشابه (الوضع العادي): {round(sim_normal, 2)}")
+    print(f"🔄 نسبة التشابه (بعد قلب العلم): {round(sim_flipped, 2)}")
+
+    # القرار: هل البطاقة في الاتجاه الصحيح أم لا؟
+    if sim_normal >= sim_flipped:
+        print("✅ البطاقة في الاتجاه الصحيح.")
+        return card_img
+    else:
+        print("🔁 تم اكتشاف أن الاتجاه غير صحيح، سيتم قلب الصورة.")
+        flipped_img = cv2.rotate(card_img, cv2.ROTATE_180)
+        return flipped_img
+
+# التنفيذ الكامل
+def process_image(image_path, flag_reference_path="flag_ref.jpg"):
+    # 1. قص البطاقة
+    card_img, cropped_path = extract_card(image_path)
+    if card_img is None:
+        return
+
+    # 2. التحقق من الاتجاه
+    final_card = check_and_fix_orientation(cropped_path, flag_reference_path)
+
+    # 3. حفظ النسخة النهائية
+    final_output_path = "final_id.jpg"
+    cv2.imwrite(final_output_path, final_card)
+    print(f"✅ تم حفظ النسخة النهائية في: {final_output_path}")
+
+# مثال على الاستخدام
+process_image("20.jpg", "flag_ref.jpg")

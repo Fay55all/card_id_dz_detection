@@ -1,0 +1,6 @@
+train: C:/Users/FAYSSAL/Desktop/Y9LB_BACK/train/images
+val: C:/Users/FAYSSAL/Desktop/Y9LB_BACK/valid/images
+test: C:/Users/FAYSSAL/Desktop/Y9LB_BACK/test/images
+
+nc: 1
+names: ['alger']
